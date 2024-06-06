@@ -62,9 +62,9 @@ def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_time
 class Diffusion(object):
     def __init__(self, args, config):
         self.args = args
-        self.config = config
+        self.config = config#初始化
         
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')#调用GPU
 
         self.model_var_type = config.model.var_type
         betas = get_beta_schedule(
@@ -74,17 +74,17 @@ class Diffusion(object):
             num_diffusion_timesteps=config.diffusion.num_diffusion_timesteps,
         )
         betas = self.betas = torch.from_numpy(betas).float().to(self.device)
-        self.num_timesteps = betas.shape[0]
+        self.num_timesteps = betas.shape[0]#确定模型变量类型，这里是fixedlarge
 
-        alphas = 1.0 - betas
+        alphas = 1.0 - betas#计算扩散过程中的参数
         alphas_cumprod = alphas.cumprod(dim=0)
         alphas_cumprod_prev = torch.cat(
             [torch.ones(1).to(self.device), alphas_cumprod[:-1]], dim=0
         )
         posterior_variance = (
             betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
-        )
-        if self.model_var_type == "fixedlarge":
+        )#计算后验方差
+        if self.model_var_type == "fixedlarge":#根据模型设置对数方差
             self.logvar = betas.log()
             # torch.cat(
             # [posterior_variance[1:2], betas[1:]], dim=0).log()
@@ -106,10 +106,10 @@ class Diffusion(object):
             os.path.join(self.args.ckpt_folder, "ckpts/ckpt.pth"),
             map_location=self.device,
         )
-        model = model.to(self.device)
-        model = torch.nn.DataParallel(model)
-        model.load_state_dict(states[0], strict=True)
-        model.eval()
+        model = model.to(self.device)#加载模型至计算机上
+        model = torch.nn.DataParallel(model)#在多个GPU上进行计算
+        model.load_state_dict(states[0], strict=True)#加载模型的预训练权重
+        model.eval()#设置为评估模式
     
         # calculate FIM 
         fisher_dict = {}
@@ -128,7 +128,7 @@ class Diffusion(object):
             x, c = x.to(self.device), c.to(self.device)
         
             b = self.betas
-            ts = torch.chunk(torch.arange(0, self.num_timesteps), args.n_chunks)
+            ts = torch.chunk(torch.arange(0, self.num_timesteps), args.n_chunks)#将时间分为多个块，并遍历每个块
             
             for _t in ts:
                 for i in range(len(_t)):
@@ -194,7 +194,7 @@ class Diffusion(object):
             n = x.size(0)
             x = x.to(self.device)
             x = data_transform(self.config, x)
-            e = torch.randn_like(x)
+            e = torch.randn_like(x)#生成随机高斯噪声
             b = self.betas
 
             # antithetic sampling
@@ -214,7 +214,7 @@ class Diffusion(object):
             optimizer.zero_grad()
             loss.backward()
 
-            try:
+            try:#进行梯度裁剪
                 torch.nn.utils.clip_grad_norm_(
                     model.parameters(), config.optim.grad_clip
                 )
@@ -251,7 +251,7 @@ class Diffusion(object):
         args, config = self.args, self.config
         logging.info(f"Training diffusion forget with contrastive and EWC. Gamma: {config.training.gamma}, lambda: {config.training.lmbda}")
         D_train_loader = all_but_one_class_path_dataset(config, os.path.join(args.ckpt_folder, "class_samples"), args.label_to_forget)
-        D_train_iter = cycle(D_train_loader)
+        D_train_iter = cycle(D_train_loader)#加载除了要忘记类别之外的所有类别的dataloader
         
         print("Loading checkpoints {}".format(args.ckpt_folder))
         model = Conditional_Model(config)
@@ -449,7 +449,7 @@ class Diffusion(object):
                     )
                     c = torch.ones(x.size(0), device=self.device, dtype=int) * int(i)
                     x = self.sample_image(x, model, c, cond_scale)
-                    x = inverse_data_transform(config, x)
+                    x = inverse_data_transform(config, x)#还原成原始格式
                     
                     for k in range(n):
                         tvu.save_image(x[k], os.path.join(sample_dir, str(c[k].item()), f"{img_id}.png"), normalize=True)
